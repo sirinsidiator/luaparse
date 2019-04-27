@@ -1372,7 +1372,7 @@
   // ### Validation functions
 
   function isWhiteSpace(charCode) {
-    return 9 === charCode || 32 === charCode || 0xB === charCode || 0xC === charCode;
+    return 9 === charCode || 32 === charCode || 0xB === charCode || 0xC === charCode || 0xFEFF === charCode;
   }
 
   function isLineTerminator(charCode) {
