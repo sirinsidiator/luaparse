@@ -16,9 +16,11 @@
     "README.md",
     "LICENSE",
     "luaparse.js",
+    "luaparse.d.ts",
     "bin/luaparse"
   ],
   "main": "luaparse.js",
+  "typings": "luaparse.d.ts",
   "bin": {
     "luaparse": "bin/luaparse"
   },
