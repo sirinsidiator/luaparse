@@ -480,6 +480,47 @@
         , raw: raw
       };
     }
+
+    // special node types for HavokScript
+    , typedIdentifier: function(name, dataType) {
+      return {
+          type: 'TypedIdentifier'
+        , name: name
+        , dataType: dataType
+      };
+    }
+
+    , hstructureEntry: function(key, dataType) {
+      return {
+          type: 'HstructureEntry'
+        , key: key
+        , dataType: dataType
+      };
+    }
+
+    , hstructureDeclarationExpression: function(name, fields) {
+      return {
+          type: 'HstructureDeclarationExpression'
+        , name: name
+        , fields: fields
+      };
+    }
+
+    , hmakeValue: function(key, value) {
+      return {
+          type: 'HmakeValue'
+        , key: key
+        , value: value
+      };
+    }
+
+    , hmakeConstructorExpression: function(dataType, fields) {
+      return {
+          type: 'HmakeConstructorExpression'
+        , dataType: dataType
+        , fields: fields
+      };
+    }
   };
 
   // Wrap up the node object.
@@ -504,11 +545,11 @@
     ;
 
   var indexOf = /* istanbul ignore next */ function (array, element) {
-    for (var i = 0, length = array.length; i < length; ++i) {
-      if (array[i] === element) return i;
-    }
-    return -1;
-  };
+      for (var i = 0, length = array.length; i < length; ++i) {
+        if (array[i] === element) return i;
+      }
+      return -1;
+    };
 
   /* istanbul ignore else */
   if (Array.prototype.indexOf)
@@ -907,7 +948,7 @@
         if (!encodingMode.discardStrings) {
           var beforeEscape = input.slice(stringStart, index - 1);
           string += encodingMode.fixup(beforeEscape);
-        }
+    }
         var escapeValue = readEscapeSequence();
         if (!encodingMode.discardStrings)
           string += escapeValue;
@@ -1227,12 +1268,12 @@
 
       case '\\': case '"': case "'":
         return input.charAt(index++);
-    }
+        }
 
-    if (features.strictEscapes)
+        if (features.strictEscapes)
       raise(null, errors.invalidEscape, '\\' + input.slice(sequenceStart, index + 1));
-    return input.charAt(index++);
-  }
+        return input.charAt(index++);
+    }
 
   // Comments begin with -- after which it will be decided if they are
   // multiline comments or not.
@@ -1333,8 +1374,8 @@
     }
 
     raise(null, isComment ?
-                errors.unfinishedLongComment :
-                errors.unfinishedLongString,
+              errors.unfinishedLongComment :
+              errors.unfinishedLongString,
           firstLine, '<eof>');
   }
 
@@ -1424,11 +1465,19 @@
           return ('goto' === id);
         return false;
       case 5:
-        return 'break' === id || 'local' === id || 'until' === id || 'while' === id;
+        if ('break' === id || 'local' === id || 'until' === id || 'while' === id)
+          return true;
+        if (features.havokScript)
+          return ('hmake' === id);
+        return false;
       case 6:
         return 'elseif' === id || 'repeat' === id || 'return' === id;
       case 8:
         return 'function' === id;
+      case 10:
+        if (features.havokScript)
+          return ('hstructure' === id);
+        return false;
     }
     return false;
   }
@@ -1487,6 +1536,7 @@
 
   // Add identifier to the current scope
   function scopeIdentifier(node) {
+    if (features.havokScript && node.type === "TypedIdentifier") node = node.name;
     scopeIdentifierName(node.name);
     attachScope(node, true);
   }
@@ -1820,6 +1870,13 @@
         case 'do':       next(); return parseDoStatement(flowContext);
         case 'goto':     next(); return parseGotoStatement(flowContext);
       }
+
+      if (features.havokScript) {
+        switch (token.value) {
+          case 'hstructure': next(); return parseHstructureStatement();
+          case 'hmake':      next(); return parseHmakeStatement();
+        }
+      }
     }
 
     if (features.contextualGoto &&
@@ -1832,7 +1889,7 @@
     if (trackLocations) locations.pop();
 
     return parseAssignmentOrCallStatement(flowContext);
-  }
+    }
 
   // ## Statements
 
@@ -1920,10 +1977,10 @@
       var expression = parseExpression(flowContext);
       if (null != expression) {
         expressions.push(expression);
-        while (consume(',')) {
+      while (consume(',')) {
           expression = parseExpectedExpression(flowContext);
-          expressions.push(expression);
-        }
+        expressions.push(expression);
+      }
       }
       consume(';'); // grammar tells us ; is optional here.
     }
@@ -2070,10 +2127,19 @@
 
     if (Identifier === token.type) {
       var variables = []
-        , init = [];
+        , init = []
+        , marker;
 
       do {
+        if (features.havokScript && trackLocations) marker = createLocationMarker();
+
         name = parseIdentifier();
+
+        if (features.havokScript && consume(':')) {
+          pushLocation(marker);
+          var type = parseIdentifier();
+          name = finishNode(ast.typedIdentifier(name, type));
+        }
 
         variables.push(name);
         flowContext.addLocal(name.name, declToken);
@@ -2133,7 +2199,7 @@
     if (trackLocations) startMarker = createLocationMarker();
 
     do {
-      if (trackLocations) marker = createLocationMarker();
+    if (trackLocations) marker = createLocationMarker();
 
       if (Identifier === token.type) {
         name = token.value;
@@ -2166,10 +2232,10 @@
           break;
         default:
           break both;
-        }
+      }
 
         base = parsePrefixExpressionPart(base, marker, flowContext);
-      }
+    }
 
       targets.push(base);
 
@@ -2237,7 +2303,16 @@
       // with a vararg.
       while (true) {
         if (Identifier === token.type) {
+          if (features.havokScript && trackLocations) marker = createLocationMarker();
+
           var parameter = parseIdentifier();
+
+          if (features.havokScript && consume(':')) {
+            pushLocation(marker);
+            var type = parseIdentifier();
+            parameter = finishNode(ast.typedIdentifier(parameter, type));
+          }
+
           // Function parameters are local.
           if (options.scope) scopeIdentifier(parameter);
 
@@ -2340,6 +2415,63 @@
     }
     expect('}');
     return finishNode(ast.tableConstructorExpression(fields));
+  }
+
+  //     hstructure ::= 'hstructure Type' [field] '}'
+  //     field ::= Name : Type
+
+  function parseHstructureStatement() {
+    var fields = []
+      , name, key, type;
+
+    name = parseIdentifier();
+    while (token.value !== "end") {
+      markLocation();
+      if (Identifier === token.type) {
+        key = parseIdentifier();
+        expect(':');
+        type = parseIdentifier();
+        fields.push(finishNode(ast.hstructureEntry(key, type)));
+      } else {
+        raiseUnexpectedToken('<name> : <type>', token);
+        break;
+      }
+    }
+    expect('end');
+    return finishNode(ast.hstructureDeclarationExpression(name, fields));
+  }
+
+  //     hmakeconstructor ::= hmake Name '{' [fieldlist] '}'
+  //     fieldlist ::= field {fieldsep field} fieldsep
+  //     field ::= Name = 'exp'
+  //
+  //     fieldsep ::= ','
+
+  function parseHmakeStatement() {
+    var fields = []
+      , type, key, value;
+
+    next();
+    type = parseIdentifier();
+    expect("{");
+    while (token.value !== "}") {
+      markLocation();
+      if (Identifier === token.type) {
+        key = parseIdentifier();
+        expect("=");
+        value = parseExpectedExpression();
+        fields.push(finishNode(ast.hmakeValue(key, value)));
+      } else {
+        raiseUnexpectedToken('<name> = <expr>', token);
+      }
+      if (','.indexOf(token.value) >= 0) {
+        next();
+        continue;
+      }
+      break;
+    }
+    expect('}');
+    return finishNode(ast.hmakeConstructorExpression(type, fields));
   }
 
   // Expression parser
@@ -2473,34 +2605,34 @@
   function parsePrefixExpressionPart(base, marker, flowContext) {
     var expression, identifier;
 
-    if (Punctuator === token.type) {
-      switch (token.value) {
-        case '[':
-          pushLocation(marker);
-          next();
+      if (Punctuator === token.type) {
+        switch (token.value) {
+          case '[':
+            pushLocation(marker);
+            next();
           expression = parseExpectedExpression(flowContext);
-          expect(']');
+            expect(']');
           return finishNode(ast.indexExpression(base, expression));
-        case '.':
-          pushLocation(marker);
-          next();
-          identifier = parseIdentifier();
+          case '.':
+            pushLocation(marker);
+            next();
+            identifier = parseIdentifier();
           return finishNode(ast.memberExpression(base, '.', identifier));
-        case ':':
-          pushLocation(marker);
-          next();
-          identifier = parseIdentifier();
-          base = finishNode(ast.memberExpression(base, ':', identifier));
-          // Once a : is found, this has to be a CallExpression, otherwise
-          // throw an error.
-          pushLocation(marker);
+          case ':':
+            pushLocation(marker);
+            next();
+            identifier = parseIdentifier();
+            base = finishNode(ast.memberExpression(base, ':', identifier));
+            // Once a : is found, this has to be a CallExpression, otherwise
+            // throw an error.
+            pushLocation(marker);
           return parseCallExpression(base, flowContext);
-        case '(': case '{': // args
-          pushLocation(marker);
+          case '(': case '{': // args
+            pushLocation(marker);
           return parseCallExpression(base, flowContext);
-      }
-    } else if (StringLiteral === token.type) {
-      pushLocation(marker);
+        }
+      } else if (StringLiteral === token.type) {
+        pushLocation(marker);
       return parseCallExpression(base, flowContext);
     }
 
@@ -2521,7 +2653,7 @@
     } else if (consume('(')) {
       base = parseExpectedExpression(flowContext);
       expect(')');
-    } else {
+      } else {
       return null;
     }
 
@@ -2531,7 +2663,7 @@
       if (newBase === null)
         break;
       base = newBase;
-    }
+      }
 
     return base;
   }
@@ -2553,10 +2685,10 @@
           var expression = parseExpression(flowContext);
           if (null != expression) {
             expressions.push(expression);
-            while (consume(',')) {
+          while (consume(',')) {
               expression = parseExpectedExpression(flowContext);
-              expressions.push(expression);
-            }
+            expressions.push(expression);
+          }
           }
 
           expect(')');
@@ -2600,6 +2732,9 @@
       next();
       if (options.scope) createScope();
       return parseFunctionDeclaration(null);
+    } else if (features.havokScript && Keyword === type && 'hmake' === value) {
+      pushLocation(marker);
+      return parseHmakeStatement();
     } else if (consume('{')) {
       pushLocation(marker);
       return parseTableConstructor(flowContext);
@@ -2665,6 +2800,9 @@
       unicodeEscapes: true,
       imaginaryNumbers: true,
       integerSuffixes: true
+    },
+    'HavokScript5.1': {
+      havokScript: true
     }
   };
 
