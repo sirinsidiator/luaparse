@@ -1,6 +1,5 @@
 /* global exports:true, module:true, require:true, define:true, global:true */
-
-(function (root, name, factory) {
+export const { parse } = (function (root, name, factory) {
   'use strict';
 
   // Used to determine if values are of the language type `Object`
@@ -47,9 +46,13 @@
     else factory(freeExports);
   }
   // in a browser or Rhino
-  else {
+  else if(root) {
     factory((root[name] = {}));
+  } else {
+    root = {};
+    factory(root);
   }
+  return root;
 }(this, 'luaparse', function (exports) {
   'use strict';
 
@@ -2303,6 +2306,7 @@
       // with a vararg.
       while (true) {
         if (Identifier === token.type) {
+          let marker;
           if (features.havokScript && trackLocations) marker = createLocationMarker();
 
           var parameter = parseIdentifier();
@@ -2883,4 +2887,5 @@
   }
 
 }));
+
 /* vim: set sw=2 ts=2 et tw=79 : */

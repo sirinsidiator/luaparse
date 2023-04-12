@@ -19,6 +19,7 @@
     "luaparse.d.ts",
     "bin/luaparse"
   ],
+  "type": "module",
   "main": "luaparse.js",
   "typings": "luaparse.d.ts",
   "bin": {
